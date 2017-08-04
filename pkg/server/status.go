@@ -39,8 +39,8 @@ func (c *criContainerdService) Status(ctx context.Context, r *runtime.StatusRequ
 		Status: true,
 	}
 	// Use containerd grpc server healthcheck service to check its readiness.
-	resp, err := c.healthService.Check(ctx, &healthapi.HealthCheckRequest{})
-	if err != nil || resp.Status != healthapi.HealthCheckResponse_SERVING {
+	serving, err := c.client.IsServing(ctx)
+	if err != nil || !serving {
 		runtimeCondition.Status = false
 		runtimeCondition.Reason = runtimeNotReadyReason
 		if err != nil {

@@ -19,6 +19,7 @@ package container
 import (
 	"sync"
 
+	"github.com/containerd/containerd"
 	"github.com/kubernetes-incubator/cri-containerd/pkg/store"
 )
 
@@ -30,18 +31,22 @@ type Container struct {
 	// Status stores the status of the container.
 	Status StatusStorage
 	// TODO(random-liu): Add containerd container client.
+
+	// containerd container
+	Container *containerd.Container
 	// TODO(random-liu): Add stop channel to get rid of stop poll waiting.
 }
 
 // NewContainer creates an internally used container type.
-func NewContainer(metadata Metadata, status Status) (Container, error) {
+func NewContainer(metadata Metadata, status Status, container *containerd.Container) (Container, error) {
 	s, err := StoreStatus(metadata.ID, status)
 	if err != nil {
 		return Container{}, err
 	}
 	return Container{
-		Metadata: metadata,
-		Status:   s,
+		Metadata:  metadata,
+		Status:    s,
+		Container: container,
 	}, nil
 }
 

@@ -54,20 +54,12 @@ func (c *criContainerdService) RemovePodSandbox(ctx context.Context, r *runtime.
 
 	// Return error if sandbox container is not fully stopped.
 	// TODO(random-liu): [P0] Make sure network is torn down, may need to introduce a state.
-	_, err = c.taskService.Get(ctx, &tasks.GetTaskRequest{ContainerID: id})
+	status, err := sandbox.Container.Task(ctx)
 	if err != nil && !isContainerdGRPCNotFoundError(err) {
 		return nil, fmt.Errorf("failed to get sandbox container info for %q: %v", id, err)
 	}
 	if err == nil {
-		return nil, fmt.Errorf("sandbox container %q is not fully stopped", id)
-	}
-
-	// Remove sandbox container snapshot.
-	if err := c.snapshotService.Remove(ctx, id); err != nil {
-		if !errdefs.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to remove sandbox container snapshot %q: %v", id, err)
-		}
-		glog.V(5).Infof("Remove called for snapshot %q that does not exist", id)
+		return nil, fmt.Errorf("sandbox container %q is not fully stopped, status:%s", id.status)
 	}
 
 	// Remove all containers inside the sandbox.
@@ -96,7 +88,7 @@ func (c *criContainerdService) RemovePodSandbox(ctx context.Context, r *runtime.
 	}
 
 	// Delete sandbox container.
-	if err := c.containerService.Delete(ctx, id); err != nil {
+	if err := sandbox.Container.Delete(ctx, WithSnapshotCleanup); err != nil {
 		if !isContainerdGRPCNotFoundError(err) {
 			return nil, fmt.Errorf("failed to delete sandbox container %q: %v", id, err)
 		}
