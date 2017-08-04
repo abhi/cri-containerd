@@ -56,6 +56,7 @@ func TestToCRIContainer(t *testing.T) {
 			Reason:     "test-reason",
 			Message:    "test-message",
 		},
+		nil,
 	)
 	assert.NoError(t, err)
 	expect := &runtime.Container{
@@ -158,7 +159,7 @@ type containerForTest struct {
 }
 
 func (c containerForTest) toContainer() (containerstore.Container, error) {
-	return containerstore.NewContainer(c.metadata, c.status)
+	return containerstore.NewContainer(c.metadata, c.status, nil)
 }
 
 func TestListContainers(t *testing.T) {

@@ -62,6 +62,7 @@ func TestSetContainerRemoving(t *testing.T) {
 		container, err := containerstore.NewContainer(
 			containerstore.Metadata{ID: testID},
 			test.status,
+			nil,
 		)
 		assert.NoError(t, err)
 		err = setContainerRemoving(container)
