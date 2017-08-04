@@ -93,29 +93,26 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate container %q spec: %v", id, err)
 	}
-	rawSpec, err := json.Marshal(spec)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal oci spec %+v: %v", spec, err)
-	}
 	glog.V(4).Infof("Container spec: %+v", spec)
+
+	var opts []NewContainerOpts
 
 	// Prepare container rootfs.
 	if config.GetLinux().GetSecurityContext().GetReadonlyRootfs() {
-		if _, err := c.snapshotService.View(ctx, id, image.ChainID); err != nil {
-			return nil, fmt.Errorf("failed to view container rootfs %q: %v", image.ChainID, err)
-		}
+		opts = append(opts, containerd.WithNewSnapshotView(ctx, id, image.ChainID))
 	} else {
-		if _, err := c.snapshotService.Prepare(ctx, id, image.ChainID); err != nil {
-			return nil, fmt.Errorf("failed to prepare container rootfs %q: %v", image.ChainID, err)
-		}
+		opts = append(opts, containerd.WithNewSnapshot(ctx, id, image.ChainID))
 	}
-	defer func() {
-		if retErr != nil {
-			if err := c.snapshotService.Remove(ctx, id); err != nil {
-				glog.Errorf("Failed to remove container snapshot %q: %v", id, err)
+	//TODO : Abhi ensure cleanup happens on containerd side
+	/*
+		defer func() {
+			if retErr != nil {
+				if err := c.snapshotService.Remove(ctx, id); err != nil {
+					glog.Errorf("Failed to remove container snapshot %q: %v", id, err)
+				}
 			}
-		}
-	}()
+		}()
+	*/
 	meta.ImageRef = image.ID
 
 	// Create container root directory.
@@ -134,33 +131,26 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 		}
 	}()
 
-	// Create containerd container.
-	if _, err = c.containerService.Create(ctx, containers.Container{
-		ID: id,
-		// TODO(random-liu): Checkpoint metadata into container labels.
-		Image:   image.ID,
-		Runtime: containers.RuntimeInfo{Name: defaultRuntime},
-		Spec: &prototypes.Any{
-			TypeUrl: runtimespec.Version,
-			Value:   rawSpec,
-		},
-		RootFS: id,
-	}); err != nil {
+	opts = append(opts, []NewContainerOpts{containerd.WithSpec(spec), containerd.WithRuntime(defaultRuntime)}...)
+
+	if newContainer, err := c.client.NewContainer(ctx, id, opts...); err != nil {
 		return nil, fmt.Errorf("failed to create containerd container: %v", err)
 	}
+
 	defer func() {
 		if retErr != nil {
-			if err := c.containerService.Delete(ctx, id); err != nil {
+			if err := newContainer.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
 				glog.Errorf("Failed to delete containerd container %q: %v", id, err)
 			}
 		}
 	}()
 
-	container, err := containerstore.NewContainer(meta, containerstore.Status{CreatedAt: time.Now().UnixNano()})
+	container, err := containerstore.NewContainer(meta, containerstore.Status{CreatedAt: time.Now().UnixNano()}, newContainer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create internal container object for %q: %v",
 			id, err)
 	}
+
 	defer func() {
 		if retErr != nil {
 			// Cleanup container checkpoint on error.

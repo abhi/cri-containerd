@@ -54,7 +54,7 @@ func (c *criContainerdService) StartContainer(ctx context.Context, r *runtime.St
 	if err := container.Status.Update(func(status containerstore.Status) (containerstore.Status, error) {
 		// Always apply status change no matter startContainer fails or not. Because startContainer
 		// may change container state no matter it fails or succeeds.
-		startErr = c.startContainer(ctx, id, container.Metadata, &status)
+		startErr = c.startContainer(ctx, container, container.Metadata, &status)
 		return status, nil
 	}); startErr != nil {
 		return nil, startErr
@@ -66,16 +66,16 @@ func (c *criContainerdService) StartContainer(ctx context.Context, r *runtime.St
 
 // startContainer actually starts the container. The function needs to be run in one transaction. Any updates
 // to the status passed in will be applied no matter the function returns error or not.
-func (c *criContainerdService) startContainer(ctx context.Context, id string, meta containerstore.Metadata, status *containerstore.Status) (retErr error) {
+func (c *criContainerdService) startContainer(ctx context.Context, container *container.Container, meta containerstore.Metadata, status *containerstore.Status) (retErr error) {
 	config := meta.Config
 	// Return error if container is not in created state.
 	if status.State() != runtime.ContainerState_CONTAINER_CREATED {
-		return fmt.Errorf("container %q is in %s state", id, criContainerStateToString(status.State()))
+		return fmt.Errorf("container %q is in %s state", container.ID, criContainerStateToString(status.State()))
 	}
 
 	// Do not start the container when there is a removal in progress.
 	if status.Removing {
-		return fmt.Errorf("container %q is in removing state", id)
+		return fmt.Errorf("container %q is in removing state", container.ID)
 	}
 
 	defer func() {
@@ -97,17 +97,17 @@ func (c *criContainerdService) startContainer(ctx context.Context, id string, me
 	sandboxConfig := sandbox.Config
 	sandboxID := meta.SandboxID
 	// Make sure sandbox is running.
-	sandboxInfo, err := c.taskService.Get(ctx, &tasks.GetTaskRequest{ContainerID: sandboxID})
+	status, err := sandbox.Container.Task(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get sandbox container %q info: %v", sandboxID, err)
 	}
 	// This is only a best effort check, sandbox may still exit after this. If sandbox fails
 	// before starting the container, the start will fail.
-	if sandboxInfo.Task.Status != task.StatusRunning {
+	if status != task.StatusRunning {
 		return fmt.Errorf("sandbox container %q is not running", sandboxID)
 	}
 
-	containerRootDir := getContainerRootDir(c.rootDir, id)
+	containerRootDir := getContainerRootDir(c.rootDir, container.ID)
 	stdin, stdout, stderr := getStreamingPipes(containerRootDir)
 	// Set stdin to empty if Stdin == false.
 	if !config.GetStdin() {
@@ -149,50 +149,31 @@ func (c *criContainerdService) startContainer(ctx context.Context, id string, me
 	}
 
 	// Get rootfs mounts.
-	rootfsMounts, err := c.snapshotService.Mounts(ctx, id)
+	rootfsMounts, err := c.snapshotService.Mounts(ctx, container.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get rootfs mounts %q: %v", id, err)
 	}
-	var rootfs []*types.Mount
-	for _, m := range rootfsMounts {
-		rootfs = append(rootfs, &types.Mount{
-			Type:    m.Type,
-			Source:  m.Source,
-			Options: m.Options,
-		})
-	}
 
-	// Create containerd task.
-	createOpts := &tasks.CreateTaskRequest{
-		ContainerID: id,
-		Rootfs:      rootfs,
-		Stdin:       stdin,
-		Stdout:      stdout,
-		Stderr:      stderr,
-		Terminal:    config.GetTty(),
-	}
-	glog.V(5).Infof("Create containerd task (id=%q, name=%q) with options %+v.",
-		id, meta.Name, createOpts)
-	createResp, err := c.taskService.Create(ctx, createOpts)
+	task, err := container.NewTask(ctx, containerd.NewIO(stdin, stdout, stderr), containerd.WithRootFS(rootfsMounts))
 	if err != nil {
 		return fmt.Errorf("failed to create containerd task: %v", err)
 	}
+
 	defer func() {
 		if retErr != nil {
-			// Cleanup the containerd task if an error is returned.
-			if _, err := c.taskService.Delete(ctx, &tasks.DeleteTaskRequest{ContainerID: id}); err != nil {
-				glog.Errorf("Failed to delete containerd task %q: %v", id, err)
-			}
+	 			if err:=task.Delete(ctx);err!=nil {
+					glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
+				}
 		}
-	}()
+	}
 
 	// Start containerd task.
-	if _, err := c.taskService.Start(ctx, &tasks.StartTaskRequest{ContainerID: id}); err != nil {
+	if err := task.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start containerd task %q: %v", id, err)
 	}
 
 	// Update container start timestamp.
-	status.Pid = createResp.Pid
+	status.Pid = task.Pid()
 	status.StartedAt = time.Now().UnixNano()
 	return nil
 }

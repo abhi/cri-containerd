@@ -94,11 +94,8 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 			}
 		}
 		glog.V(2).Infof("Stop container %q with signal %v", id, stopSignal)
-		_, err = c.taskService.Kill(ctx, &tasks.KillRequest{
-			ContainerID: id,
-			Signal:      uint32(stopSignal),
-			All:         true,
-		})
+		err = c.container.Container.Task.Kill(ctx, uint32(stopSignal), true)
+
 		if err != nil {
 			if !isContainerdGRPCNotFoundError(err) && !isRuncProcessAlreadyFinishedError(err) {
 				return fmt.Errorf("failed to stop container %q: %v", id, err)
@@ -115,11 +112,8 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 
 	// Event handler will Delete the container from containerd after it handles the Exited event.
 	glog.V(2).Infof("Kill container %q", id)
-	_, err := c.taskService.Kill(ctx, &tasks.KillRequest{
-		ContainerID: id,
-		Signal:      uint32(unix.SIGKILL),
-		All:         true,
-	})
+	err = c.container.Container.Task.Kill(ctx, uint32(unix.SIGKILL), true)
+
 	if err != nil {
 		if !isContainerdGRPCNotFoundError(err) && !isRuncProcessAlreadyFinishedError(err) {
 			return fmt.Errorf("failed to kill container %q: %v", id, err)

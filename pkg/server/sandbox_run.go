@@ -25,6 +25,7 @@ import (
 
 	"github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/api/types"
+	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/containers"
 	prototypes "github.com/gogo/protobuf/types"
 	"github.com/golang/glog"
@@ -79,53 +80,30 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sandbox image %q: %v", defaultSandboxImage, err)
 	}
-	rootfsMounts, err := c.snapshotService.View(ctx, id, image.ChainID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare sandbox rootfs %q: %v", image.ChainID, err)
-	}
-	defer func() {
-		if retErr != nil {
-			if err := c.snapshotService.Remove(ctx, id); err != nil {
-				glog.Errorf("Failed to remove sandbox container snapshot %q: %v", id, err)
-			}
-		}
-	}()
-	var rootfs []*types.Mount
-	for _, m := range rootfsMounts {
-		rootfs = append(rootfs, &types.Mount{
-			Type:    m.Type,
-			Source:  m.Source,
-			Options: m.Options,
-		})
-	}
 
 	// Create sandbox container.
 	spec, err := c.generateSandboxContainerSpec(id, config, image.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate sandbox container spec: %v", err)
 	}
-	rawSpec, err := json.Marshal(spec)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal oci spec %+v: %v", spec, err)
-	}
+
 	glog.V(4).Infof("Sandbox container spec: %+v", spec)
-	if _, err = c.containerService.Create(ctx, containers.Container{
-		ID: id,
-		// TODO(random-liu): Checkpoint metadata into container labels.
-		Image:   image.ID,
-		Runtime: containers.RuntimeInfo{Name: defaultRuntime},
-		Spec: &prototypes.Any{
-			TypeUrl: runtimespec.Version,
-			Value:   rawSpec,
-		},
-		RootFS: id,
-	}); err != nil {
+
+	// TODO(random-liu): Checkpoint metadata into container labels.
+
+	opts = append(opts, []NewContainerOpts{
+		containerd.WithSpec(spec),
+		containerd.WithRuntime(defaultRuntime),
+		containerd.WithNewSnapshotView(id, image)}...)
+
+	if container, err = c.client.NewContainer(ctx, id, opts); err != nil {
 		return nil, fmt.Errorf("failed to create containerd container: %v", err)
 	}
+
 	defer func() {
 		if retErr != nil {
-			if err := c.containerService.Delete(ctx, id); err != nil {
-				glog.Errorf("Failed to delete containerd container%q: %v", id, err)
+			if err := container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
+				glog.Errorf("Failed to delete containerd container %q: %v", id, err)
 			}
 		}
 	}()
@@ -179,32 +157,21 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 		}
 	}()
 
-	createOpts := &tasks.CreateTaskRequest{
-		ContainerID: id,
-		Rootfs:      rootfs,
-		// No stdin for sandbox container.
-		Stdout: stdout,
-		Stderr: stderr,
+	task, err := container.NewTask(ctx, containerd.NewIO(nil, stdout, stderr), containerd.WithRootFS(rootfsMounts))
+	defer func() {
+		if retErr != nil {
+	 			if err:=task.Delete(ctx);err!=nil {
+					glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
+				}
+		}
 	}
+
 	// Create sandbox task in containerd.
 	glog.V(5).Infof("Create sandbox container (id=%q, name=%q) with options %+v.",
 		id, name, createOpts)
-	createResp, err := c.taskService.Create(ctx, createOpts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sandbox container %q: %v",
-			id, err)
-	}
-	defer func() {
-		if retErr != nil {
-			// Cleanup the sandbox container if an error is returned.
-			if err := c.stopSandboxContainer(ctx, id); err != nil {
-				glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
-			}
-		}
-	}()
 
-	sandbox.Pid = createResp.Pid
-	sandbox.NetNS = getNetworkNamespace(createResp.Pid)
+	sandbox.Pid = task.Pid()
+	sandbox.NetNS = getNetworkNamespace(task.Pid())
 	if !config.GetLinux().GetSecurityContext().GetNamespaceOptions().GetHostNetwork() {
 		// Setup network for sandbox.
 		// TODO(random-liu): [P2] Replace with permanent network namespace.
@@ -222,14 +189,23 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 		}()
 	}
 
-	// Start sandbox container in containerd.
-	if _, err := c.taskService.Start(ctx, &tasks.StartTaskRequest{ContainerID: id}); err != nil {
-		return nil, fmt.Errorf("failed to start sandbox container %q: %v",
+	err = task.Start(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sandbox container %q: %v",
 			id, err)
 	}
+	defer func() {
+		if retErr != nil {
+			// Cleanup the sandbox container if an error is returned.
+			if err := c.stopSandboxContainer(ctx, id); err != nil {
+				glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
+			}
+		}
+	}()
 
 	// Add sandbox into sandbox store.
 	sandbox.CreatedAt = time.Now().UnixNano()
+	sandbox.Container = container
 	if err := c.sandboxStore.Add(sandbox); err != nil {
 		return nil, fmt.Errorf("failed to add sandbox %+v into store: %v", sandbox, err)
 	}
