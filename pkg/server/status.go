@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"golang.org/x/net/context"
-	healthapi "google.golang.org/grpc/health/grpc_health_v1"
 
 	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
 )
@@ -38,18 +37,24 @@ func (c *criContainerdService) Status(ctx context.Context, r *runtime.StatusRequ
 		Type:   runtime.RuntimeReady,
 		Status: true,
 	}
-	// Use containerd grpc server healthcheck service to check its readiness.
-	serving, err := c.client.IsServing(ctx)
-	if err != nil || !serving {
+
+	if c.client == nil {
 		runtimeCondition.Status = false
 		runtimeCondition.Reason = runtimeNotReadyReason
-		if err != nil {
-			runtimeCondition.Message = fmt.Sprintf("Containerd healthcheck returns error: %v", err)
-		} else {
-			runtimeCondition.Message = "Containerd grpc server is not serving"
+		runtimeCondition.Message = "Containerd client not initialized"
+	} else {
+
+		serving, err := c.client.IsServing(ctx)
+		if err != nil || !serving {
+			runtimeCondition.Status = false
+			runtimeCondition.Reason = runtimeNotReadyReason
+			if err != nil {
+				runtimeCondition.Message = fmt.Sprintf("Containerd healthcheck returns error: %v", err)
+			} else {
+				runtimeCondition.Message = "Containerd grpc server is not serving"
+			}
 		}
 	}
-
 	networkCondition := &runtime.RuntimeCondition{
 		Type:   runtime.NetworkReady,
 		Status: true,

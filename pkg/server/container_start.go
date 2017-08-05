@@ -23,9 +23,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/containerd/containerd/api/services/tasks/v1"
-	"github.com/containerd/containerd/api/types"
-	"github.com/containerd/containerd/api/types/task"
+	"github.com/containerd/containerd"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
@@ -54,7 +52,7 @@ func (c *criContainerdService) StartContainer(ctx context.Context, r *runtime.St
 	if err := container.Status.Update(func(status containerstore.Status) (containerstore.Status, error) {
 		// Always apply status change no matter startContainer fails or not. Because startContainer
 		// may change container state no matter it fails or succeeds.
-		startErr = c.startContainer(ctx, container, container.Metadata, &status)
+		startErr = c.startContainer(ctx, container.Container, container.Metadata, &status)
 		return status, nil
 	}); startErr != nil {
 		return nil, startErr
@@ -66,7 +64,7 @@ func (c *criContainerdService) StartContainer(ctx context.Context, r *runtime.St
 
 // startContainer actually starts the container. The function needs to be run in one transaction. Any updates
 // to the status passed in will be applied no matter the function returns error or not.
-func (c *criContainerdService) startContainer(ctx context.Context, container *container.Container, meta containerstore.Metadata, status *containerstore.Status) (retErr error) {
+func (c *criContainerdService) startContainer(ctx context.Context, container containerd.Container, meta containerstore.Metadata, status *containerstore.Status) (retErr error) {
 	config := meta.Config
 	// Return error if container is not in created state.
 	if status.State() != runtime.ContainerState_CONTAINER_CREATED {
@@ -97,17 +95,19 @@ func (c *criContainerdService) startContainer(ctx context.Context, container *co
 	sandboxConfig := sandbox.Config
 	sandboxID := meta.SandboxID
 	// Make sure sandbox is running.
-	status, err := sandbox.Container.Task(ctx)
+	s, err := sandbox.Container.Task(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get sandbox container %q info: %v", sandboxID, err)
 	}
 	// This is only a best effort check, sandbox may still exit after this. If sandbox fails
 	// before starting the container, the start will fail.
-	if status != task.StatusRunning {
+
+	taskStatus, err := s.Status(ctx)
+	if err != nil || taskStatus != containerd.Running {
 		return fmt.Errorf("sandbox container %q is not running", sandboxID)
 	}
 
-	containerRootDir := getContainerRootDir(c.rootDir, container.ID)
+	containerRootDir := getContainerRootDir(c.rootDir, container.ID())
 	stdin, stdout, stderr := getStreamingPipes(containerRootDir)
 	// Set stdin to empty if Stdin == false.
 	if !config.GetStdin() {
@@ -147,29 +147,29 @@ func (c *criContainerdService) startContainer(ctx context.Context, container *co
 			}
 		}
 	}
-
-	// Get rootfs mounts.
-	rootfsMounts, err := c.snapshotService.Mounts(ctx, container.ID)
-	if err != nil {
-		return fmt.Errorf("failed to get rootfs mounts %q: %v", id, err)
+	fifo := &containerd.FIFOSet{
+		Dir: containerRootDir,
+		Out: stdout,
+		Err: stderr,
+		In:  stdin,
 	}
 
-	task, err := container.NewTask(ctx, containerd.NewIO(stdin, stdout, stderr), containerd.WithRootFS(rootfsMounts))
+	task, err := container.NewTask(ctx, containerd.NewIOWithFifoSet(os.Stdin, os.Stdout, os.Stderr, fifo, false))
 	if err != nil {
 		return fmt.Errorf("failed to create containerd task: %v", err)
 	}
 
 	defer func() {
 		if retErr != nil {
-	 			if err:=task.Delete(ctx);err!=nil {
-					glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
-				}
+			if _, err := task.Delete(ctx); err != nil {
+				glog.Errorf("Failed to delete container %q: %v", container.ID(), err)
+			}
 		}
-	}
+	}()
 
 	// Start containerd task.
 	if err := task.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start containerd task %q: %v", id, err)
+		return fmt.Errorf("failed to start containerd task %q: %v", container.ID(), err)
 	}
 
 	// Update container start timestamp.

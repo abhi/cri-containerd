@@ -17,17 +17,12 @@ limitations under the License.
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/api/services/tasks/v1"
-	"github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/containers"
-	prototypes "github.com/gogo/protobuf/types"
 	"github.com/golang/glog"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	runtimespec "github.com/opencontainers/runtime-spec/specs-go"
@@ -78,7 +73,7 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 	// Ensure sandbox container image snapshot.
 	image, err := c.ensureImageExists(ctx, c.sandboxImage)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sandbox image %q: %v", defaultSandboxImage, err)
+		return nil, fmt.Errorf("failed to get sandbox image %q: %v", c.sandboxImage, err)
 	}
 
 	// Create sandbox container.
@@ -90,13 +85,14 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 	glog.V(4).Infof("Sandbox container spec: %+v", spec)
 
 	// TODO(random-liu): Checkpoint metadata into container labels.
-
-	opts = append(opts, []NewContainerOpts{
+	opts := []containerd.NewContainerOpts{
 		containerd.WithSpec(spec),
+		containerd.WithImage(image.Image),
 		containerd.WithRuntime(defaultRuntime),
-		containerd.WithNewSnapshotView(id, image)}...)
+		containerd.WithNewSnapshotView(id, image.Image)}
 
-	if container, err = c.client.NewContainer(ctx, id, opts); err != nil {
+	container, err := c.client.NewContainer(ctx, id, opts...)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create containerd container: %v", err)
 	}
 
@@ -157,18 +153,26 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 		}
 	}()
 
-	task, err := container.NewTask(ctx, containerd.NewIO(nil, stdout, stderr), containerd.WithRootFS(rootfsMounts))
+	fifo := &containerd.FIFOSet{
+		Dir: sandboxRootDir,
+		Out: stdout,
+		Err: stderr,
+	}
+	task, err := container.NewTask(ctx, containerd.NewIOWithFifoSet(os.Stdin, os.Stdout, os.Stderr, fifo, false))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create task for sandbox %q: %v", container.ID(), err)
+	}
 	defer func() {
 		if retErr != nil {
-	 			if err:=task.Delete(ctx);err!=nil {
-					glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
-				}
+			if _, err := task.Delete(ctx); err != nil {
+				glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
+			}
 		}
-	}
+	}()
 
 	// Create sandbox task in containerd.
-	glog.V(5).Infof("Create sandbox container (id=%q, name=%q) with options %+v.",
-		id, name, createOpts)
+	glog.V(5).Infof("Create sandbox container (id=%q, name=%q).",
+		id, name)
 
 	sandbox.Pid = task.Pid()
 	sandbox.NetNS = getNetworkNamespace(task.Pid())
@@ -189,9 +193,8 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 		}()
 	}
 
-	err = task.Start(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sandbox container %q: %v",
+	if err = task.Start(ctx); err != nil {
+		return nil, fmt.Errorf("failed to start sandbox container task %q: %v",
 			id, err)
 	}
 	defer func() {

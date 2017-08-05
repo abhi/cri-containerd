@@ -48,6 +48,7 @@ func copyIO(fifos *FIFOSet, ioset *ioSet, tty bool) (_ *wgCloser, err error) {
 		}
 	}()
 
+	if len(fifos.In) > 0{
 	if f, err = fifo.OpenFifo(ctx, fifos.In, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0700); err != nil {
 		return nil, err
 	}
@@ -56,7 +57,7 @@ func copyIO(fifos *FIFOSet, ioset *ioSet, tty bool) (_ *wgCloser, err error) {
 		io.Copy(w, ioset.in)
 		w.Close()
 	}(f)
-
+	}
 	if f, err = fifo.OpenFifo(ctx, fifos.Out, syscall.O_RDONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0700); err != nil {
 		return nil, err
 	}

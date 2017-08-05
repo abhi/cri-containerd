@@ -17,13 +17,11 @@ limitations under the License.
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/containers"
-	prototypes "github.com/gogo/protobuf/types"
+	"github.com/containerd/containerd"
 	"github.com/golang/glog"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runc/libcontainer/devices"
@@ -79,12 +77,11 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 	// Prepare container image snapshot. For container, the image should have
 	// been pulled before creating the container, so do not ensure the image.
 	imageRef := config.GetImage().GetImage()
-	image, err := c.localResolve(ctx, imageRef)
+
+	// Ensure sandbox container image snapshot.
+	image, err := c.ensureImageExists(ctx, imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve image %q: %v", imageRef, err)
-	}
-	if image == nil {
-		return nil, fmt.Errorf("image %q not found", imageRef)
+		return nil, fmt.Errorf("failed to get sandbox image %q: %v", imageRef, err)
 	}
 
 	// Generate container runtime spec.
@@ -95,24 +92,15 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 	}
 	glog.V(4).Infof("Container spec: %+v", spec)
 
-	var opts []NewContainerOpts
+	var opts []containerd.NewContainerOpts
 
 	// Prepare container rootfs.
 	if config.GetLinux().GetSecurityContext().GetReadonlyRootfs() {
-		opts = append(opts, containerd.WithNewSnapshotView(ctx, id, image.ChainID))
+		opts = append(opts, containerd.WithNewSnapshotView(id, image.Image))
 	} else {
-		opts = append(opts, containerd.WithNewSnapshot(ctx, id, image.ChainID))
+		opts = append(opts, containerd.WithNewSnapshot(id, image.Image))
 	}
-	//TODO : Abhi ensure cleanup happens on containerd side
-	/*
-		defer func() {
-			if retErr != nil {
-				if err := c.snapshotService.Remove(ctx, id); err != nil {
-					glog.Errorf("Failed to remove container snapshot %q: %v", id, err)
-				}
-			}
-		}()
-	*/
+
 	meta.ImageRef = image.ID
 
 	// Create container root directory.
@@ -131,9 +119,10 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 		}
 	}()
 
-	opts = append(opts, []NewContainerOpts{containerd.WithSpec(spec), containerd.WithRuntime(defaultRuntime)}...)
+	opts = append(opts, []containerd.NewContainerOpts{containerd.WithSpec(spec), containerd.WithRuntime(defaultRuntime)}...)
 
-	if newContainer, err := c.client.NewContainer(ctx, id, opts...); err != nil {
+	var newContainer containerd.Container
+	if newContainer, err = c.client.NewContainer(ctx, id, opts...); err != nil {
 		return nil, fmt.Errorf("failed to create containerd container: %v", err)
 	}
 

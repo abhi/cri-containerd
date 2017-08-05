@@ -99,7 +99,7 @@ func TestContainerStore(t *testing.T) {
 	assert := assertlib.New(t)
 	containers := map[string]Container{}
 	for _, id := range ids {
-		container, err := NewContainer(metadatas[id], statuses[id])
+		container, err := NewContainer(metadatas[id], statuses[id], nil)
 		assert.NoError(err)
 		containers[id] = container
 	}

@@ -20,6 +20,7 @@ import (
 	namespacesapi "github.com/containerd/containerd/api/services/namespaces/v1"
 	snapshotapi "github.com/containerd/containerd/api/services/snapshot/v1"
 	"github.com/containerd/containerd/api/services/tasks/v1"
+	taskapi "github.com/containerd/containerd/api/types/task"
 	versionservice "github.com/containerd/containerd/api/services/version/v1"
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
@@ -670,4 +671,13 @@ func (c *Client) Export(ctx context.Context, desc ocispec.Descriptor, opts ...Ex
 		return nil, errors.Errorf("unsupported format: %s", eopts.format)
 	}
 	return pr, nil
+}
+
+// ListImages returns all existing images
+func (c *Client) ListTasks(ctx context.Context) ([]*taskapi.Task, error) {
+	resp, err := c.TaskService().List(ctx, &tasks.ListTasksRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Tasks, nil
 }

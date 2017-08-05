@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
+//	"fmt"
 	"github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/containers"
@@ -238,7 +238,7 @@ func (c *container) loadTask(ctx context.Context, ioAttach IOAttach) (Task, erro
 	if err != nil {
 		err = errdefs.FromGRPC(err)
 		if errdefs.IsNotFound(err) {
-			return nil, errors.Wrapf(err, "no running task found")
+			return nil,errdefs.ToGRPC(err)
 		}
 		return nil, err
 	}

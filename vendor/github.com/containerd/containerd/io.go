@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"errors"
 )
 
 type IO struct {
@@ -66,6 +67,31 @@ func NewIOWithTerminal(stdin io.Reader, stdout, stderr io.Writer, terminal bool)
 		closer, err := copyIO(paths, set, i.Terminal)
 		if err != nil {
 			return nil, err
+		}
+		i.closer = closer
+		return i, nil
+	}
+}
+
+func NewIOWithFifoSet(stdin io.Reader, stdout, stderr io.Writer, paths *FIFOSet, terminal bool) IOCreation {
+	return func(id string) (*IO, error) {
+		if paths == nil {
+			return nil, errors.New("fifo not provided")
+		}
+		i := &IO{
+			Terminal: terminal,
+			Stdout:   paths.Out,
+			Stderr:   paths.Err,
+			Stdin:    paths.In,
+		}
+		set := &ioSet{
+			in:  stdin,
+			out: stdout,
+			err: stderr,
+		}
+		closer, err := copyIO(paths, set, i.Terminal)
+		if err != nil {
+			return nil, fmt.Errorf("Return error: %+v %v",i,err)
 		}
 		i.closer = closer
 		return i, nil

@@ -116,7 +116,7 @@ func TestToCRIContainerStatus(t *testing.T) {
 		status.ExitCode = test.exitCode
 		status.Reason = test.reason
 		status.Message = test.message
-		container, err := containerstore.NewContainer(*metadata, *status)
+		container, err := containerstore.NewContainer(*metadata, *status, nil)
 		assert.NoError(t, err)
 		// Set expectation based on test case.
 		expected.State = test.expectedState
@@ -157,7 +157,7 @@ func TestContainerStatus(t *testing.T) {
 		// Update status with test case.
 		status.FinishedAt = test.finishedAt
 		status.Reason = test.reason
-		container, err := containerstore.NewContainer(*metadata, *status)
+		container, err := containerstore.NewContainer(*metadata, *status, nil)
 		assert.NoError(t, err)
 		if test.exist {
 			assert.NoError(t, c.containerStore.Add(container))
