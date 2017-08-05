@@ -33,12 +33,12 @@ type Container struct {
 	// TODO(random-liu): Add containerd container client.
 
 	// containerd container
-	Container *containerd.Container
+	Container containerd.Container
 	// TODO(random-liu): Add stop channel to get rid of stop poll waiting.
 }
 
 // NewContainer creates an internally used container type.
-func NewContainer(metadata Metadata, status Status, container *containerd.Container) (Container, error) {
+func NewContainer(metadata Metadata, status Status, container containerd.Container) (Container, error) {
 	s, err := StoreStatus(metadata.ID, status)
 	if err != nil {
 		return Container{}, err

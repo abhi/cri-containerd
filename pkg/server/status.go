@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"golang.org/x/net/context"
-	healthapi "google.golang.org/grpc/health/grpc_health_v1"
 
 	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
 )

@@ -15,7 +15,7 @@ import (
 type Image interface {
 	Name() string
 	Target() ocispec.Descriptor
-
+	Info() images.Image
 	Unpack(context.Context, string) error
 }
 
@@ -33,6 +33,10 @@ func (i *image) Name() string {
 
 func (i *image) Target() ocispec.Descriptor {
 	return i.i.Target
+}
+
+func (i *image) Info() images.Image {
+        return i.i
 }
 
 func (i *image) Unpack(ctx context.Context, snapshotterName string) error {

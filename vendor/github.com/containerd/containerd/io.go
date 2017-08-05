@@ -46,6 +46,18 @@ func NewIO(stdin io.Reader, stdout, stderr io.Writer) IOCreation {
 	return NewIOWithTerminal(stdin, stdout, stderr, false)
 }
 
+func IO_(stdin, stdout, stderr string, terminal bool) IOCreation {
+	return func(id string) (*IO, error) {
+		i := &IO{
+			Terminal: terminal,
+			Stdout:   stdout,
+			Stdin:    stdin,
+			Stderr:   stderr,
+		}
+		return i, nil
+	}
+}
+
 func NewIOWithTerminal(stdin io.Reader, stdout, stderr io.Writer, terminal bool) IOCreation {
 	return func(id string) (*IO, error) {
 		paths, err := NewFifos(id)

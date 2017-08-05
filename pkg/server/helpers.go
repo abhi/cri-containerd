@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/images"
 	"github.com/docker/distribution/reference"
 	"github.com/docker/docker/pkg/stringid"
 	imagedigest "github.com/opencontainers/go-digest"
@@ -272,18 +273,9 @@ func normalizeImageRef(ref string) (reference.Named, error) {
 
 // getImageInfo returns image chainID, compressed size and oci config. Note that getImageInfo
 // assumes that the image has been pulled or it will return an error.
-func (c *criContainerdService) getImageInfo(ctx context.Context, ref string) (
+func (c *criContainerdService) getImageInfo(ctx context.Context, image images.Image) (
 	imagedigest.Digest, int64, *imagespec.ImageConfig, error) {
-	normalized, err := normalizeImageRef(ref)
-	if err != nil {
-		return "", 0, nil, fmt.Errorf("failed to normalize image reference %q: %v", ref, err)
-	}
-	normalizedRef := normalized.String()
-	image, err := c.imageStoreService.Get(ctx, normalizedRef)
-	if err != nil {
-		return "", 0, nil, fmt.Errorf("failed to get image %q from containerd image store: %v",
-			normalizedRef, err)
-	}
+
 	// Get image config
 	desc, err := image.Config(ctx, c.contentStoreService)
 	if err != nil {

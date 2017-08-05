@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/docker/docker/pkg/signal"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
@@ -94,7 +93,14 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 			}
 		}
 		glog.V(2).Infof("Stop container %q with signal %v", id, stopSignal)
-		err = c.container.Container.Task.Kill(ctx, uint32(stopSignal), true)
+
+		task, err := container.Container.Task(ctx, nil)
+
+		if err != nil {
+			return fmt.Errorf("failed to stop container, task not found for container %q: %v", id, err)
+		}
+
+		err = task.Kill(ctx, stopSignal)
 
 		if err != nil {
 			if !isContainerdGRPCNotFoundError(err) && !isRuncProcessAlreadyFinishedError(err) {
@@ -110,9 +116,11 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 		glog.Errorf("Stop container %q timed out: %v", id, err)
 	}
 
+	task, err := container.Container.Task(ctx, nil)
+
 	// Event handler will Delete the container from containerd after it handles the Exited event.
 	glog.V(2).Infof("Kill container %q", id)
-	err = c.container.Container.Task.Kill(ctx, uint32(unix.SIGKILL), true)
+	err = task.Kill(ctx, unix.SIGKILL)
 
 	if err != nil {
 		if !isContainerdGRPCNotFoundError(err) && !isRuncProcessAlreadyFinishedError(err) {

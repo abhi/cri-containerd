@@ -671,3 +671,19 @@ func (c *Client) Export(ctx context.Context, desc ocispec.Descriptor, opts ...Ex
 	}
 	return pr, nil
 }
+
+// ListImages returns all existing images
+func (c *Client) ListTasks(ctx context.Context) ([]Task, error) {
+	resp, err := c.TaskService().List(ctx, &tasks.ListTasksRequest{})
+	if err != nil {
+		return nil, err
+	}
+	tasks := []Task{}
+	for i, t := range resp.Tasks {
+		tasks[i] = &task{
+			client: c,
+			pid:    t.Pid,
+		}
+	}
+	return tasks, nil
+}

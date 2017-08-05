@@ -17,26 +17,20 @@ limitations under the License.
 package server
 
 import (
-	gocontext "context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
-	"sync"
-	"time"
-
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/errdefs"
 	containerdimages "github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
-	"github.com/containerd/containerd/remotes/docker/schema1"
-	containerdrootfs "github.com/containerd/containerd/rootfs"
 	"github.com/golang/glog"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/net/context"
 	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	imagestore "github.com/kubernetes-incubator/cri-containerd/pkg/store/image"
 )
@@ -89,41 +83,44 @@ func (c *criContainerdService) PullImage(ctx context.Context, r *runtime.PullIma
 		}
 	}()
 	imageRef := r.GetImage().GetImage()
+	ref_, _ := normalizeImageRef(imageRef)
+	ref := ref_.String()
+
+	resolver := docker.NewResolver(docker.ResolverOptions{
+		Credentials: func(string) (string, string, error) { return ParseAuth(r.GetAuth()) },
+		Client:      http.DefaultClient,
+	})
 
 	// TODO(mikebrow): add truncIndex for image id
-	imageID, repoTag, repoDigest, err := c.pullImage(ctx, imageRef, r.GetAuth())
+	image, err := c.client.Pull(ctx, ref, containerd.WithPullUnpack, containerd.WithSchema1Conversion, containerd.WithResolver(resolver))
 	if err != nil {
-		return nil, fmt.Errorf("failed to pull image %q: %v", imageRef, err)
+		return nil, fmt.Errorf("failed to pull image %q: %v", ref, err)
 	}
-	glog.V(4).Infof("Pulled image %q with image id %q, repo tag %q, repo digest %q", imageRef, imageID,
-		repoTag, repoDigest)
+
+	glog.V(4).Infof("Pulled image %q with image id %q", ref, image.Name())
 
 	// Get image information.
-	chainID, size, config, err := c.getImageInfo(ctx, imageRef)
+	chainID, size, config, err := c.getImageInfo(ctx, image.Info())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image %q information: %v", imageRef, err)
 	}
-	image := imagestore.Image{
-		ID:      imageID,
+
+	img := imagestore.Image{
+		ID:      image.Name(),
 		ChainID: chainID.String(),
 		Size:    size,
 		Config:  config,
+		Image:   image,
 	}
 
-	if repoDigest != "" {
-		image.RepoDigests = []string{repoDigest}
-	}
-	if repoTag != "" {
-		image.RepoTags = []string{repoTag}
-	}
-	c.imageStore.Add(image)
+	c.imageStore.Add(img)
 
 	// NOTE(random-liu): the actual state in containerd is the source of truth, even we maintain
 	// in-memory image store, it's only for in-memory indexing. The image could be removed
 	// by someone else anytime, before/during/after we create the metadata. We should always
 	// check the actual state in containerd before using the image or returning status of the
 	// image.
-	return &runtime.PullImageResponse{ImageRef: imageID}, err
+	return &runtime.PullImageResponse{ImageRef: image.Name()}, err
 }
 
 // resourceSet is the helper struct to help tracking all resources associated
@@ -183,6 +180,7 @@ func ParseAuth(auth *runtime.AuthConfig) (string, string, error) {
 	return "", "", fmt.Errorf("invalid auth config")
 }
 
+/*
 // pullImage pulls image and returns image id (config digest), repoTag and repoDigest.
 func (c *criContainerdService) pullImage(ctx context.Context, rawRef string, auth *runtime.AuthConfig) (
 	// TODO(random-liu): Replace with client.Pull.
@@ -197,19 +195,15 @@ func (c *criContainerdService) pullImage(ctx context.Context, rawRef string, aut
 		glog.V(4).Infof("PullImage using normalized image ref: %q", ref)
 	}
 
+	var opts []containerd.RemoteOpts{}
 	// Resolve the image reference to get descriptor and fetcher.
 	resolver := docker.NewResolver(docker.ResolverOptions{
 		Credentials: func(string) (string, string, error) { return ParseAuth(auth) },
 		Client:      http.DefaultClient,
 	})
-	_, desc, err := resolver.Resolve(ctx, ref)
-	if err != nil {
-		return "", "", "", fmt.Errorf("failed to resolve ref %q: %v", ref, err)
-	}
-	fetcher, err := resolver.Fetcher(ctx, ref)
-	if err != nil {
-		return "", "", "", fmt.Errorf("failed to get fetcher for ref %q: %v", ref, err)
-	}
+
+	opts = append(opts,WithResolver(resolver))
+
 	// Currently, the resolved image name is the same with ref in docker resolver,
 	// but they may be different in the future.
 	// TODO(random-liu): Always resolve image reference and use resolved image name in
@@ -336,6 +330,7 @@ func (c *criContainerdService) pullImage(ctx context.Context, rawRef string, aut
 	}
 	return imageID, repoTag, repoDigest, nil
 }
+*/
 
 // createImageReference creates image reference inside containerd image store.
 // Note that because create and update are not finished in one transaction, there could be race. E.g.
