@@ -18,11 +18,15 @@ package server
 
 import (
 	"fmt"
-	"github.com/containerd/containerd"
+
 	"github.com/golang/glog"
-	"github.com/kubernetes-incubator/cri-containerd/pkg/store"
 	"golang.org/x/net/context"
+
+	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/errdefs"
 	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
+
+	"github.com/kubernetes-incubator/cri-containerd/pkg/store"
 )
 
 // RemovePodSandbox removes the sandbox. If there are running containers in the
@@ -52,7 +56,7 @@ func (c *criContainerdService) RemovePodSandbox(ctx context.Context, r *runtime.
 	// Return error if sandbox container is not fully stopped.
 	// TODO(random-liu): [P0] Make sure network is torn down, may need to introduce a state.
 	_, err = sandbox.Container.Task(ctx, nil)
-	if err != nil && !isContainerdGRPCNotFoundError(err) && !isRuncProcessAlreadyFinishedError(err) {
+	if err != nil && !errdefs.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to get sandbox container info for %q: %v", id, err)
 	}
 	if err == nil {
@@ -86,7 +90,7 @@ func (c *criContainerdService) RemovePodSandbox(ctx context.Context, r *runtime.
 
 	// Delete sandbox container.
 	if err := sandbox.Container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
-		if !isContainerdGRPCNotFoundError(err) {
+		if !errdefs.IsNotFound(err) {
 			return nil, fmt.Errorf("failed to delete sandbox container %q: %v", id, err)
 		}
 		glog.V(5).Infof("Remove called for sandbox container %q that does not exist", id, err)

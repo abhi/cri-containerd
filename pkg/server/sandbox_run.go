@@ -95,7 +95,6 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 	if err != nil {
 		return nil, fmt.Errorf("failed to create containerd container: %v", err)
 	}
-
 	defer func() {
 		if retErr != nil {
 			if err := container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
@@ -158,21 +157,21 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 		Out: stdout,
 		Err: stderr,
 	}
+	// Create sandbox task in containerd.
+	glog.V(5).Infof("Create sandbox container (id=%q, name=%q).",
+		id, name)
 	task, err := container.NewTask(ctx, containerd.NewIOWithFifoSet(os.Stdin, os.Stdout, os.Stderr, fifo, false))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create task for sandbox %q: %v", container.ID(), err)
+		return nil, fmt.Errorf("failed to create task for sandbox %q: %v", id, err)
 	}
 	defer func() {
 		if retErr != nil {
-			if _, err := task.Delete(ctx); err != nil {
+			// Cleanup the sandbox container if an error is returned.
+			if err := c.stopSandboxContainer(ctx, container); err != nil {
 				glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
 			}
 		}
 	}()
-
-	// Create sandbox task in containerd.
-	glog.V(5).Infof("Create sandbox container (id=%q, name=%q).",
-		id, name)
 
 	sandbox.Pid = task.Pid()
 	sandbox.NetNS = getNetworkNamespace(task.Pid())
@@ -200,8 +199,8 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 	defer func() {
 		if retErr != nil {
 			// Cleanup the sandbox container if an error is returned.
-			if err := c.stopSandboxContainer(ctx, id); err != nil {
-				glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
+			if _, err := task.Delete(ctx, containerd.WithProcessKill); err != nil {
+				glog.Errorf("Failed to delete sandbox container task %q: %v", id, err)
 			}
 		}
 	}()

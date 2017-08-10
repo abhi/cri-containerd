@@ -109,7 +109,7 @@ func (c *criContainerdService) PullImage(ctx context.Context, r *runtime.PullIma
 		repoTag, repoDigest)
 
 	// Get image information.
-	chainID, size, config, err := c.getImageInfo(ctx, image.Info())
+	chainID, size, config, err := c.getImageInfo(ctx, image.Image())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image %q information: %v", imageRef, err)
 	}

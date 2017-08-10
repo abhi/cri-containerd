@@ -61,7 +61,8 @@ func TestSetContainerRemoving(t *testing.T) {
 		t.Logf("TestCase %q", desc)
 		container, err := containerstore.NewContainer(
 			containerstore.Metadata{ID: testID},
-			test.status, nil,
+			test.status,
+			nil,
 		)
 		assert.NoError(t, err)
 		err = setContainerRemoving(container)

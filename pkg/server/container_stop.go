@@ -20,10 +20,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/docker/docker/pkg/signal"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"golang.org/x/sys/unix"
+
+	"github.com/containerd/containerd/errdefs"
+	"github.com/docker/docker/pkg/signal"
 	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
 
 	"github.com/kubernetes-incubator/cri-containerd/pkg/store"
@@ -96,7 +98,7 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 
 		task, err := container.Container.Task(ctx, nil)
 		if err != nil {
-			if !isContainerdGRPCNotFoundError(err) {
+			if !errdefs.IsNotFound(err) {
 				return fmt.Errorf("failed to stop container, task not found for container %q: %v", id, err)
 			}
 		}
@@ -104,7 +106,7 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 		err = task.Kill(ctx, stopSignal)
 
 		if err != nil {
-			if !isContainerdGRPCNotFoundError(err) && !isRuncProcessAlreadyFinishedError(err) {
+			if !errdefs.IsNotFound(err) && !isRuncProcessAlreadyFinishedError(err) {
 				return fmt.Errorf("failed to stop container %q: %v", id, err)
 			}
 			// Move on to make sure container status is updated.
@@ -119,7 +121,7 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 
 	task, err := container.Container.Task(ctx, nil)
 	if err != nil {
-		if !isContainerdGRPCNotFoundError(err) {
+		if !errdefs.IsNotFound(err) {
 			return fmt.Errorf("failed to stop container, task not found for container %q: %v", id, err)
 		}
 	}
@@ -128,7 +130,7 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 	err = task.Kill(ctx, unix.SIGKILL)
 
 	if err != nil {
-		if !isContainerdGRPCNotFoundError(err) && !isRuncProcessAlreadyFinishedError(err) {
+		if !errdefs.IsNotFound(err) && !isRuncProcessAlreadyFinishedError(err) {
 			return fmt.Errorf("failed to kill container %q: %v", id, err)
 		}
 		// Move on to make sure container status is updated.

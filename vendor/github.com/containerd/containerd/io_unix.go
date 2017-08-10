@@ -48,39 +48,45 @@ func copyIO(fifos *FIFOSet, ioset *ioSet, tty bool) (_ *wgCloser, err error) {
 		}
 	}()
 
-	if len(fifos.In) > 0{
-	if f, err = fifo.OpenFifo(ctx, fifos.In, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0700); err != nil {
-		return nil, err
+	// ignore if the paths for stdin is not provided
+	if len(fifos.In) > 0 {
+		if f, err = fifo.OpenFifo(ctx, fifos.In, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0700); err != nil {
+			return nil, err
+		}
+		set = append(set, f)
+		go func(w io.WriteCloser) {
+			io.Copy(w, ioset.in)
+			w.Close()
+		}(f)
 	}
-	set = append(set, f)
-	go func(w io.WriteCloser) {
-		io.Copy(w, ioset.in)
-		w.Close()
-	}(f)
-	}
-	if f, err = fifo.OpenFifo(ctx, fifos.Out, syscall.O_RDONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0700); err != nil {
-		return nil, err
-	}
-	set = append(set, f)
-	wg.Add(1)
-	go func(r io.ReadCloser) {
-		io.Copy(ioset.out, r)
-		r.Close()
-		wg.Done()
-	}(f)
 
-	if f, err = fifo.OpenFifo(ctx, fifos.Err, syscall.O_RDONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0700); err != nil {
-		return nil, err
-	}
-	set = append(set, f)
-
-	if !tty {
+	if len(fifos.Out) > 0 {
+		if f, err = fifo.OpenFifo(ctx, fifos.Out, syscall.O_RDONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0700); err != nil {
+			return nil, err
+		}
+		set = append(set, f)
 		wg.Add(1)
 		go func(r io.ReadCloser) {
-			io.Copy(ioset.err, r)
+			io.Copy(ioset.out, r)
 			r.Close()
 			wg.Done()
 		}(f)
+	}
+
+	if len(fifos.Err) > 0 {
+		if f, err = fifo.OpenFifo(ctx, fifos.Err, syscall.O_RDONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0700); err != nil {
+			return nil, err
+		}
+		set = append(set, f)
+
+		if !tty {
+			wg.Add(1)
+			go func(r io.ReadCloser) {
+				io.Copy(ioset.err, r)
+				r.Close()
+				wg.Done()
+			}(f)
+		}
 	}
 	return &wgCloser{
 		wg:     wg,

@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd"
+
 	"github.com/kubernetes-incubator/cri-containerd/pkg/store"
 )
 

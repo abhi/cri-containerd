@@ -64,16 +64,20 @@ func (c *criContainerdService) StartContainer(ctx context.Context, r *runtime.St
 
 // startContainer actually starts the container. The function needs to be run in one transaction. Any updates
 // to the status passed in will be applied no matter the function returns error or not.
-func (c *criContainerdService) startContainer(ctx context.Context, container containerd.Container, meta containerstore.Metadata, status *containerstore.Status) (retErr error) {
+func (c *criContainerdService) startContainer(ctx context.Context,
+	container containerd.Container,
+	meta containerstore.Metadata,
+	status *containerstore.Status) (retErr error) {
 	config := meta.Config
+	id := container.ID()
+
 	// Return error if container is not in created state.
 	if status.State() != runtime.ContainerState_CONTAINER_CREATED {
-		return fmt.Errorf("container %q is in %s state", container.ID, criContainerStateToString(status.State()))
+		return fmt.Errorf("container %q is in %s state", id, criContainerStateToString(status.State()))
 	}
-
 	// Do not start the container when there is a removal in progress.
 	if status.Removing {
-		return fmt.Errorf("container %q is in removing state", container.ID)
+		return fmt.Errorf("container %q is in removing state", id)
 	}
 
 	defer func() {
@@ -101,13 +105,16 @@ func (c *criContainerdService) startContainer(ctx context.Context, container con
 	}
 	// This is only a best effort check, sandbox may still exit after this. If sandbox fails
 	// before starting the container, the start will fail.
-
 	taskStatus, err := s.Status(ctx)
-	if err != nil || taskStatus != containerd.Running {
+	if err != nil {
+		return fmt.Errorf("faile to get task status for container %q : %v", id, err)
+	}
+
+	if taskStatus.Status != containerd.Running {
 		return fmt.Errorf("sandbox container %q is not running", sandboxID)
 	}
 
-	containerRootDir := getContainerRootDir(c.rootDir, container.ID())
+	containerRootDir := getContainerRootDir(c.rootDir, id)
 	stdin, stdout, stderr := getStreamingPipes(containerRootDir)
 	// Set stdin to empty if Stdin == false.
 	if !config.GetStdin() {
@@ -158,18 +165,17 @@ func (c *criContainerdService) startContainer(ctx context.Context, container con
 	if err != nil {
 		return fmt.Errorf("failed to create containerd task: %v", err)
 	}
-
 	defer func() {
 		if retErr != nil {
-			if _, err := task.Delete(ctx); err != nil {
-				glog.Errorf("Failed to delete container %q: %v", container.ID(), err)
+			if _, err := task.Delete(ctx, containerd.WithProcessKill); err != nil {
+				glog.Errorf("Failed to delete containerd task %q: %v", id, err)
 			}
 		}
 	}()
 
 	// Start containerd task.
 	if err := task.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start containerd task %q: %v", container.ID(), err)
+		return fmt.Errorf("failed to start containerd task %q: %v", id, err)
 	}
 
 	// Update container start timestamp.

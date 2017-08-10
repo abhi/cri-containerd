@@ -78,10 +78,12 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 	// been pulled before creating the container, so do not ensure the image.
 	imageRef := config.GetImage().GetImage()
 
-	// Ensure sandbox container image snapshot.
-	image, err := c.ensureImageExists(ctx, imageRef)
+	image, err := c.localResolve(ctx, imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sandbox image %q: %v", imageRef, err)
+		return nil, fmt.Errorf("failed to resolve image %q: %v", imageRef, err)
+	}
+	if image == nil {
+		return nil, fmt.Errorf("image %q not found", imageRef)
 	}
 
 	// Generate container runtime spec.
@@ -119,27 +121,28 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 		}
 	}()
 
-	opts = append(opts, []containerd.NewContainerOpts{containerd.WithSpec(spec), containerd.WithRuntime(defaultRuntime)}...)
+	opts = append(opts, containerd.WithSpec(spec), containerd.WithRuntime(defaultRuntime))
 
-	var newContainer containerd.Container
-	if newContainer, err = c.client.NewContainer(ctx, id, opts...); err != nil {
+	var cntr containerd.Container
+	if cntr, err = c.client.NewContainer(ctx, id, opts...); err != nil {
 		return nil, fmt.Errorf("failed to create containerd container: %v", err)
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := newContainer.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
+			if err := cntr.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
 				glog.Errorf("Failed to delete containerd container %q: %v", id, err)
 			}
 		}
 	}()
 
-	container, err := containerstore.NewContainer(meta, containerstore.Status{CreatedAt: time.Now().UnixNano()}, newContainer)
+	container, err := containerstore.NewContainer(meta,
+		containerstore.Status{CreatedAt: time.Now().UnixNano()},
+		cntr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create internal container object for %q: %v",
 			id, err)
 	}
-
 	defer func() {
 		if retErr != nil {
 			// Cleanup container checkpoint on error.

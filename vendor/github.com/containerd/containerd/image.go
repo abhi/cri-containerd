@@ -12,11 +12,16 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Image describes an image used by containers
 type Image interface {
+	// Name of the image
 	Name() string
+	// Target descriptor for the image content
 	Target() ocispec.Descriptor
-	Info() images.Image
+	// Unpack unpacks the image's content into a snapshot
 	Unpack(context.Context, string) error
+	// Image provides access to internal image info
+	Image() images.Image
 }
 
 var _ = (Image)(&image{})
@@ -35,8 +40,8 @@ func (i *image) Target() ocispec.Descriptor {
 	return i.i.Target
 }
 
-func (i *image) Info() images.Image {
-        return i.i
+func (i *image) Image() images.Image {
+	return i.i
 }
 
 func (i *image) Unpack(ctx context.Context, snapshotterName string) error {

@@ -38,21 +38,14 @@ func (c *criContainerdService) Status(ctx context.Context, r *runtime.StatusRequ
 		Status: true,
 	}
 
-	if c.client == nil {
+	serving, err := c.client.IsServing(ctx)
+	if err != nil || !serving {
 		runtimeCondition.Status = false
 		runtimeCondition.Reason = runtimeNotReadyReason
-		runtimeCondition.Message = "Containerd client not initialized"
-	} else {
-
-		serving, err := c.client.IsServing(ctx)
-		if err != nil || !serving {
-			runtimeCondition.Status = false
-			runtimeCondition.Reason = runtimeNotReadyReason
-			if err != nil {
-				runtimeCondition.Message = fmt.Sprintf("Containerd healthcheck returns error: %v", err)
-			} else {
-				runtimeCondition.Message = "Containerd grpc server is not serving"
-			}
+		if err != nil {
+			runtimeCondition.Message = fmt.Sprintf("Containerd healthcheck returns error: %v", err)
+		} else {
+			runtimeCondition.Message = "Containerd grpc server is not serving"
 		}
 	}
 	networkCondition := &runtime.RuntimeCondition{

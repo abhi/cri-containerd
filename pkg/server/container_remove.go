@@ -19,12 +19,15 @@ package server
 import (
 	"fmt"
 
-	"github.com/containerd/containerd"
 	"github.com/golang/glog"
+	"golang.org/x/net/context"
+
+	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/errdefs"
+	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
+
 	"github.com/kubernetes-incubator/cri-containerd/pkg/store"
 	containerstore "github.com/kubernetes-incubator/cri-containerd/pkg/store/container"
-	"golang.org/x/net/context"
-	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
 )
 
 // RemoveContainer removes the container.
@@ -80,7 +83,7 @@ func (c *criContainerdService) RemoveContainer(ctx context.Context, r *runtime.R
 
 	// Delete containerd container.
 	if err := container.Container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
-		if !isContainerdGRPCNotFoundError(err) {
+		if !errdefs.IsNotFound(err) {
 			return nil, fmt.Errorf("failed to delete containerd container %q: %v", id, err)
 		}
 		glog.V(5).Infof("Remove called for containerd container %q that does not exist", id, err)

@@ -20,8 +20,9 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd"
-	"github.com/kubernetes-incubator/cri-containerd/pkg/store"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
+
+	"github.com/kubernetes-incubator/cri-containerd/pkg/store"
 )
 
 // Image contains all resources associated with the image. All fields
