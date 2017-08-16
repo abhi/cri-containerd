@@ -99,6 +99,7 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 			if !errdefs.IsNotFound(err) {
 				return fmt.Errorf("failed to stop container, task not found for container %q: %v", id, err)
 			}
+			return nil
 		}
 		if task != nil {
 			if err = task.Kill(ctx, stopSignal); err != nil {
@@ -121,6 +122,7 @@ func (c *criContainerdService) stopContainer(ctx context.Context, container cont
 		if !errdefs.IsNotFound(err) {
 			return fmt.Errorf("failed to stop container, task not found for container %q: %v", id, err)
 		}
+		return nil
 	}
 	// Event handler will Delete the container from containerd after it handles the Exited event.
 	glog.V(2).Infof("Kill container %q", id)

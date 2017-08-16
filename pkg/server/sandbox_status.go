@@ -57,7 +57,7 @@ func (c *criContainerdService) PodSandboxStatus(ctx context.Context, r *runtime.
 	if task != nil {
 		taskStatus, err := task.Status(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get task status for sandbox container %q : %v", id, err)
+			return nil, fmt.Errorf("failed to get task status for sandbox container %q: %v", id, err)
 		}
 
 		if taskStatus.Status == containerd.Running {

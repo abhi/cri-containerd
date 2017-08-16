@@ -77,12 +77,6 @@ const (
 	// According to http://man7.org/linux/man-pages/man5/resolv.conf.5.html:
 	// "The search list is currently limited to six domains with a total of 256 characters."
 	maxDNSSearches = 6
-	// stdinNamedPipe is the name of stdin named pipe.
-	//stdinNamedPipe = "stdin"
-	// stdoutNamedPipe is the name of stdout named pipe.
-	//stdoutNamedPipe = "stdout"
-	// stderrNamedPipe is the name of stderr named pipe.
-	//stderrNamedPipe = "stderr"
 	// Delimiter used to construct container/sandbox names.
 	nameDelimiter = "_"
 	// netNSFormat is the format of network namespace of a process.
@@ -250,44 +244,45 @@ func normalizeImageRef(ref string) (reference.Named, error) {
 // getImageInfo returns image chainID, compressed size and oci config. Note that getImageInfo
 // assumes that the image has been pulled or it will return an error.
 func (c *criContainerdService) getImageInfo(ctx context.Context, ref string) (
-	imagedigest.Digest, int64, *imagespec.ImageConfig, error) {
+	imagedigest.Digest, int64, *imagespec.ImageConfig, *imagespec.Descriptor, error) {
 
 	// Get image config
 	normalized, err := normalizeImageRef(ref)
 	if err != nil {
-		return "", 0, nil, fmt.Errorf("failed to normalize image reference %q: %v", ref, err)
+		return "", 0, nil, nil, fmt.Errorf("failed to normalize image reference %q: %v", ref, err)
 	}
 	normalizedRef := normalized.String()
+	//TODO(Abhi): Switch to using containerd client GetImage() api
 	image, err := c.imageStoreService.Get(ctx, normalizedRef)
 	if err != nil {
-		return "", 0, nil, fmt.Errorf("failed to get image %q from containerd image store: %v",
+		return "", 0, nil, nil, fmt.Errorf("failed to get image %q from containerd image store: %v",
 			normalizedRef, err)
 	}
 	// Get image config
 	desc, err := image.Config(ctx, c.contentStoreService)
 	if err != nil {
-		return "", 0, nil, fmt.Errorf("failed to get image config descriptor: %v", err)
+		return "", 0, nil, nil, fmt.Errorf("failed to get image config descriptor: %v", err)
 	}
 	rb, err := content.ReadBlob(ctx, c.contentStoreService, desc.Digest)
 	if err != nil {
-		return "", 0, nil, fmt.Errorf("failed to get image config reader: %v", err)
+		return "", 0, nil, nil, fmt.Errorf("failed to get image config reader: %v", err)
 	}
 	var imageConfig imagespec.Image
 	if err = json.Unmarshal(rb, &imageConfig); err != nil {
-		return "", 0, nil, err
+		return "", 0, nil, nil, err
 	}
 	// Get image chainID
 	diffIDs, err := image.RootFS(ctx, c.contentStoreService)
 	if err != nil {
-		return "", 0, nil, fmt.Errorf("failed to get image diff ids: %v", err)
+		return "", 0, nil, nil, fmt.Errorf("failed to get image diff ids: %v", err)
 	}
 	chainID := identity.ChainID(diffIDs)
 	// Get image size
 	size, err := image.Size(ctx, c.contentStoreService)
 	if err != nil {
-		return "", 0, nil, fmt.Errorf("failed to get image size: %v", err)
+		return "", 0, nil, nil, fmt.Errorf("failed to get image size: %v", err)
 	}
-	return chainID, size, &imageConfig.Config, nil
+	return chainID, size, &imageConfig.Config, &desc, nil
 }
 
 // getRepoDigestAngTag returns image repoDigest and repoTag of the named image reference.
@@ -315,7 +310,8 @@ func (c *criContainerdService) localResolve(ctx context.Context, ref string) (*i
 		if err != nil {
 			return nil, fmt.Errorf("invalid image reference %q: %v", ref, err)
 		}
-		imageInContainerd, err := c.client.GetImage(ctx, normalized.String())
+		//TODO(Abhi): Switch to using containerd client GetImage() api
+		imageInContainerd, err := c.imageStoreService.Get(ctx, normalized.String())
 		if err != nil {
 			if errdefs.IsNotFound(err) {
 				return nil, nil
@@ -323,7 +319,11 @@ func (c *criContainerdService) localResolve(ctx context.Context, ref string) (*i
 			return nil, fmt.Errorf("an error occurred when getting image %q from containerd image store: %v",
 				normalized.String(), err)
 		}
-		ref = imageInContainerd.Target().Digest.String()
+		desc, err := imageInContainerd.Config(ctx, c.contentStoreService)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get image config descriptor: %v", err)
+		}
+		ref = desc.Digest.String()
 	}
 	imageID := ref
 	image, err := c.imageStore.Get(imageID)

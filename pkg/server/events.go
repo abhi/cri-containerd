@@ -19,7 +19,6 @@ package server
 import (
 	"time"
 
-	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/services/events/v1"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/typeurl"
@@ -113,8 +112,9 @@ func (c *criContainerdService) handleEvent(evt *events.Envelope) {
 			}
 		}
 		if task != nil {
-			if _, err = task.Delete(context.Background(), containerd.WithProcessKill); err != nil {
+			if _, err = task.Delete(context.Background()); err != nil {
 				if !errdefs.IsNotFound(err) {
+					// TODO(random-liu): [P0] Enqueue the event and retry.
 					glog.Errorf("failed to stop container %q: %v", e.ContainerID, err)
 					return
 				}

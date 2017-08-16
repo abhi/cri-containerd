@@ -96,17 +96,10 @@ func (c *criContainerdService) stopSandboxContainer(ctx context.Context, contain
 		return fmt.Errorf("failed to get sandbox container: %v", err)
 	}
 
-	taskStatus, err := task.Status(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get task status for sandbox %q : %v", container.ID(), err)
-
-	}
-	if taskStatus.Status != containerd.Stopped {
-		// Delete the sandbox container from containerd.
-		_, err = task.Delete(ctx, containerd.WithProcessKill)
-		if err != nil && !errdefs.IsNotFound(err) {
-			return fmt.Errorf("failed to delete sandbox container: %v", err)
-		}
+	// Delete the sandbox container from containerd.
+	_, err = task.Delete(ctx, containerd.WithProcessKill)
+	if err != nil && !errdefs.IsNotFound(err) {
+		return fmt.Errorf("failed to delete sandbox container: %v", err)
 	}
 	return nil
 }

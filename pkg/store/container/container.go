@@ -35,17 +35,31 @@ type Container struct {
 	Container containerd.Container
 }
 
+// Opts sets specific information to newly created Container.
+type Opts func(*Container)
+
+// WithContainer adds the containerd Container to the internal data store.
+func WithContainer(cntr containerd.Container) Opts {
+	return func(c *Container) {
+		c.Container = cntr
+	}
+}
+
 // NewContainer creates an internally used container type.
-func NewContainer(metadata Metadata, status Status, container containerd.Container) (Container, error) {
+func NewContainer(metadata Metadata, status Status, opts ...Opts) (Container, error) {
 	s, err := StoreStatus(metadata.ID, status)
 	if err != nil {
 		return Container{}, err
 	}
-	return Container{
-		Metadata:  metadata,
-		Status:    s,
-		Container: container,
-	}, nil
+	c := Container{
+		Metadata: metadata,
+		Status:   s,
+	}
+
+	for _, o := range opts {
+		o(&c)
+	}
+	return c, nil
 }
 
 // Delete deletes checkpoint for the container.

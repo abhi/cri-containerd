@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -87,7 +88,6 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 
 	opts := []containerd.NewContainerOpts{
 		containerd.WithSpec(spec),
-		containerd.WithImage(image.Image),
 		containerd.WithRuntime(defaultRuntime),
 		containerd.WithNewSnapshotView(id, image.Image)}
 	container, err := c.client.NewContainer(ctx, id, opts...)
@@ -150,14 +150,15 @@ func (c *criContainerdService) RunPodSandbox(ctx context.Context, r *runtime.Run
 	// Create sandbox task in containerd.
 	glog.V(5).Infof("Create sandbox container (id=%q, name=%q).",
 		id, name)
-	task, err := container.NewTask(ctx, containerd.NewIO(os.Stdin, wStdoutPipe, wStderrPipe))
+	//TODO(Abhi): close the stdin or pass newIOCreation with /dev/null stdin
+	task, err := container.NewTask(ctx, containerd.NewIO(new(bytes.Buffer), wStdoutPipe, wStderrPipe))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task for sandbox %q: %v", id, err)
 	}
 	defer func() {
 		if retErr != nil {
 			// Cleanup the sandbox container if an error is returned.
-			if err := c.stopSandboxContainer(ctx, container); err != nil {
+			if _, err := task.Delete(ctx, containerd.WithProcessKill); err != nil {
 				glog.Errorf("Failed to delete sandbox container %q: %v", id, err)
 			}
 		}

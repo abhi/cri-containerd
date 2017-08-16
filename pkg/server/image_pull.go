@@ -115,12 +115,16 @@ func (c *criContainerdService) PullImage(ctx context.Context, r *runtime.PullIma
 	glog.V(4).Infof("Pulled image %q with image id %q, repo tag %q, repo digest %q", imageRef, image.Name(),
 		repoTag, repoDigest)
 	// Get image information.
-	chainID, size, config, err := c.getImageInfo(ctx, imageRef)
+	chainID, size, config, desc, err := c.getImageInfo(ctx, imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image %q information: %v", imageRef, err)
 	}
+	imageID := desc.Digest.String()
+	if err := c.createImageReference(ctx, imageID, image.Target()); err != nil {
+		return nil, fmt.Errorf("failed to update image reference %q: %v", r, err)
+	}
 	img := imagestore.Image{
-		ID:      image.Target().Digest.String(),
+		ID:      imageID,
 		ChainID: chainID.String(),
 		Size:    size,
 		Config:  config,

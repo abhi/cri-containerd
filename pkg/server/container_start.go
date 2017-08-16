@@ -17,9 +17,9 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -107,7 +107,7 @@ func (c *criContainerdService) startContainer(ctx context.Context,
 	// before starting the container, the start will fail.
 	taskStatus, err := s.Status(ctx)
 	if err != nil {
-		return fmt.Errorf("faile to get task status for container %q : %v", id, err)
+		return fmt.Errorf("failed to get task status for sandbox container %q : %v", id, err)
 	}
 
 	if taskStatus.Status != containerd.Running {
@@ -118,6 +118,7 @@ func (c *criContainerdService) startContainer(ctx context.Context,
 	// TODO(random-liu): [P1] Support StdinOnce after container logging is added.
 	rStdoutPipe, wStdoutPipe := io.Pipe()
 	rStderrPipe, wStderrPipe := io.Pipe()
+	stdin := new(bytes.Buffer)
 	defer func() {
 		if retErr != nil {
 			rStdoutPipe.Close()
@@ -137,8 +138,8 @@ func (c *criContainerdService) startContainer(ctx context.Context,
 			}
 		}
 	}
-
-	task, err := container.NewTask(ctx, containerd.NewIO(os.Stdin, wStdoutPipe, wStderrPipe))
+	//TODO(Abhi): close stdin/pass a managed IOCreation
+	task, err := container.NewTask(ctx, containerd.NewIO(stdin, wStdoutPipe, wStderrPipe))
 	if err != nil {
 		return fmt.Errorf("failed to create containerd task: %v", err)
 	}

@@ -133,7 +133,7 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 
 	container, err := containerstore.NewContainer(meta,
 		containerstore.Status{CreatedAt: time.Now().UnixNano()},
-		cntr)
+		containerstore.WithContainer(cntr))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create internal container object for %q: %v",
 			id, err)
