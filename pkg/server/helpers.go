@@ -244,7 +244,7 @@ func normalizeImageRef(ref string) (reference.Named, error) {
 // getImageInfo returns image chainID, compressed size and oci config. Note that getImageInfo
 // assumes that the image has been pulled or it will return an error.
 func (c *criContainerdService) getImageInfo(ctx context.Context, ref string) (
-	imagedigest.Digest, int64, *imagespec.ImageConfig, *imagespec.Descriptor, error) {
+	imagedigest.Digest, int64, *imagespec.ImageConfig,desc imagespec.Descriptor error) {
 
 	// Get image config
 	normalized, err := normalizeImageRef(ref)
@@ -252,18 +252,17 @@ func (c *criContainerdService) getImageInfo(ctx context.Context, ref string) (
 		return "", 0, nil, nil, fmt.Errorf("failed to normalize image reference %q: %v", ref, err)
 	}
 	normalizedRef := normalized.String()
-	//TODO(Abhi): Switch to using containerd client GetImage() api
-	image, err := c.imageStoreService.Get(ctx, normalizedRef)
+	image, err := c.client.GetImage(ctx, normalizedRef)
 	if err != nil {
 		return "", 0, nil, nil, fmt.Errorf("failed to get image %q from containerd image store: %v",
 			normalizedRef, err)
 	}
-	// Get image config
-	desc, err := image.Config(ctx, c.contentStoreService)
+	// Get image info
+	imageInfo, err := image.Info()
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("failed to get image config descriptor: %v", err)
+		return "", 0, nil, fmt.Errorf("failed to get image info: %v", err)
 	}
-	rb, err := content.ReadBlob(ctx, c.contentStoreService, desc.Digest)
+	rb, err := content.ReadBlob(ctx, c.contentStoreService, imageInfo.Config.Digest)
 	if err != nil {
 		return "", 0, nil, nil, fmt.Errorf("failed to get image config reader: %v", err)
 	}
@@ -272,22 +271,15 @@ func (c *criContainerdService) getImageInfo(ctx context.Context, ref string) (
 		return "", 0, nil, nil, err
 	}
 	// Get image chainID
-	diffIDs, err := image.RootFS(ctx, c.contentStoreService)
-	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("failed to get image diff ids: %v", err)
-	}
-	chainID := identity.ChainID(diffIDs)
-	// Get image size
-	size, err := image.Size(ctx, c.contentStoreService)
-	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("failed to get image size: %v", err)
-	}
-	return chainID, size, &imageConfig.Config, &desc, nil
+	chainID := identity.ChainID(imageInfo.RootFS)
+
+	return chainID, imageInfo.Size, &imageConfig.Config, imageInfo.Config,nil
 }
 
 // getRepoDigestAngTag returns image repoDigest and repoTag of the named image reference.
 func getRepoDigestAndTag(namedRef reference.Named, digest imagedigest.Digest, schema1 bool) (string, string) {
 	var repoTag, repoDigest string
+	imageInfo = 
 	if _, ok := namedRef.(reference.NamedTagged); ok {
 		repoTag = namedRef.String()
 	}
@@ -319,11 +311,11 @@ func (c *criContainerdService) localResolve(ctx context.Context, ref string) (*i
 			return nil, fmt.Errorf("an error occurred when getting image %q from containerd image store: %v",
 				normalized.String(), err)
 		}
-		desc, err := imageInContainerd.Config(ctx, c.contentStoreService)
+		imageInfo, err := imageInContainerd.Info(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get image config descriptor: %v", err)
+			return nil, fmt.Errorf("failed to get image info: %v", err)
 		}
-		ref = desc.Digest.String()
+		ref = imageInfo.Config.Digest.String()
 	}
 	imageID := ref
 	image, err := c.imageStore.Get(imageID)

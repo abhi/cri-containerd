@@ -20,10 +20,8 @@ type Image interface {
 	Target() ocispec.Descriptor
 	// Unpack unpacks the image's content into a snapshot
 	Unpack(context.Context, string) error
-	// RootFS returns the image digests
-	RootFS(ctx context.Context) ([]digest.Digest, error)
-	// Size returns the image size
-	Size(ctx context.Context) (int64, error)
+	// Info returns internal image information
+	Info(context.Context) (ImageInfo, error)
 }
 
 var _ = (Image)(&image{})
@@ -34,22 +32,18 @@ type image struct {
 	i images.Image
 }
 
+type ImageInfo struct {
+	Config ocispec.Descriptor
+	Size   int64
+	RootFS []digest.Digest
+}
+
 func (i *image) Name() string {
 	return i.i.Name
 }
 
 func (i *image) Target() ocispec.Descriptor {
 	return i.i.Target
-}
-
-func (i *image) RootFS(ctx context.Context) ([]digest.Digest, error) {
-	provider := i.client.ContentStore()
-	return i.i.RootFS(ctx, provider)
-}
-
-func (i *image) Size(ctx context.Context) (int64, error) {
-	provider := i.client.ContentStore()
-	return i.i.Size(ctx, provider)
 }
 
 func (i *image) Unpack(ctx context.Context, snapshotterName string) error {
@@ -89,6 +83,27 @@ func (i *image) Unpack(ctx context.Context, snapshotterName string) error {
 	}
 
 	return nil
+}
+
+func (i *image) Info(ctx context.Context) (info ImageInfo, err error) {
+	//var err error
+	//var info ImageInfo
+	provider := i.client.ContentStore()
+
+	info.Size, err = i.i.Size(ctx, provider)
+	if err != nil {
+		return
+	}
+	info.RootFS, err = i.i.RootFS(ctx, provider)
+	if err != nil {
+		return
+	}
+
+	info.Config, err = i.i.Config(ctx, provider)
+	if err != nil {
+		return
+	}
+	return
 }
 
 func (i *image) getLayers(ctx context.Context) ([]rootfs.Layer, error) {
