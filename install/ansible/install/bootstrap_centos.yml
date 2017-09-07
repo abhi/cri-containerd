@@ -1,0 +1,10 @@
+---
+- name: "Install CentOS dependencies"
+  yum:
+    name: "{{ item }}"
+    state: latest
+    with_items:
+      - btrfs-progs-devel
+      - device-mapper-devel
+      - libseccomp-devel
+    when: ansible_distribution == 'CentOS'

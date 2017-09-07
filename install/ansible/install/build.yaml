@@ -1,0 +1,29 @@
+---
+- name: "Get Containerd and CRI-Containerd"
+  get_url:
+    validate_certs: "no"
+    url: "https://storage.googleapis.com/cri-containerd-staging/cri-containerd-0.1.0-186-gf3ca701.tar.gz" 
+    dest: "/tmp/cri-containerd-0.1.0-186-gf3ca701.tar.gz"
+
+# TODO move to unarchive directly from the staging source instead of wget and unarchive
+#- name: "Unpack the cri-containerd package"
+#  unarchive:
+#     src: "/tmp/cri-containerd-0.1.0-186-gf3ca701.tar.gz"
+#     dest: "/usr/local/bin" 
+#     validate_certs: "no"
+- name: "Unpack the cri-containerd package"
+  shell: "tar xvf /tmp/cri-containerd-0.1.0-186-gf3ca701.tar.gz" 
+  args:
+    chdir: /usr/local/bin
+
+- name: "Copy containerd systemd service unit"
+  template: src=containerd.service dest=/etc/systemd/system/containerd.service
+  notify: reload systemd    
+
+- name: "Copy cri-containerd systemd service unit"
+  template: src=cri-containerd.service dest=/etc/systemd/system/cri-containerd.service
+  notify: reload systemd
+
+- name: "Reload systemd"
+  systemd: 
+    daemon_reload: yes

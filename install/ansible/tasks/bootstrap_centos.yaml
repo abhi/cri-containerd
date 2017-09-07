@@ -1,0 +1,12 @@
+---
+- name: "Install required packages on CentOS "
+  yum:
+    name: "{{ item }}"
+    state: latest
+    with_items:
+      - unzip
+      - tar
+      - btrfs-progs-devel
+      - device-mapper-devel
+      - libseccomp-devel
+    when: ansible_distribution == 'CentOS'
