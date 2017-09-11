@@ -106,7 +106,7 @@ func (c *criContainerdService) CreateContainer(ctx context.Context, r *runtime.C
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate container %q spec: %v", id, err)
 	}
-	glog.V(4).Infof("Container spec: %+v", spec)
+	glog.Errorf("Container spec: %+v", spec.Process.Capabilities, spec.Process.Capabilities.Effective)
 
 	// Set snapshotter before any other options.
 	opts := []containerd.NewContainerOpts{
@@ -601,7 +601,9 @@ func setOCICapabilities(g *generate.Generator, capabilities *runtime.Capability)
 
 // setOCINamespaces sets namespaces.
 func setOCINamespaces(g *generate.Generator, namespaces *runtime.NamespaceOption, sandboxPid uint32) {
-	g.AddOrReplaceLinuxNamespace(string(runtimespec.NetworkNamespace), getNetworkNamespace(sandboxPid)) // nolint: errcheck
+	if namespaces.GetHostNetwork(){
+		g.RemoveLinuxNamespace(string(getNetworkNamespace(sandboxPid))) // nolint: errcheck
+        } 
 	g.AddOrReplaceLinuxNamespace(string(runtimespec.IPCNamespace), getIPCNamespace(sandboxPid))         // nolint: errcheck
 	g.AddOrReplaceLinuxNamespace(string(runtimespec.UTSNamespace), getUTSNamespace(sandboxPid))         // nolint: errcheck
 	// Do not share pid namespace for now.

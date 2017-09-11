@@ -18,6 +18,7 @@
   copy:
     src: "{{ cri_release_directory }}usr/local/bin/{{ item }}"
     dest: "{{ local_bin_dir }}{{ item }}"
+    mode: 0744
   with_items:
     - containerd
     - containerd-stress
@@ -29,6 +30,7 @@
   copy:    
     src: "{{ cri_release_directory }}usr/local/sbin/{{ item }}"
     dest: "{{ local_sbin_dir }}{{ item }}"
+    mode: 0744
   with_items:
     - runc
 
