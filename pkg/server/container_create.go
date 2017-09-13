@@ -501,10 +501,10 @@ func addOCIBindMounts(g *generate.Generator, mounts []*runtime.Mount, mountLabel
 		if err != nil {
 			return fmt.Errorf("failed to resolve symlink %q: %v", src, err)
 		}
-		options := []string{"rbind"}
+		options := []string{"rbind","rshared"}
 		switch mount.GetPropagation() {
 		case runtime.MountPropagation_PROPAGATION_PRIVATE:
-			options = append(options, "rprivate")
+			//options = append(options, "rprivate")
 		case runtime.MountPropagation_PROPAGATION_BIDIRECTIONAL:
 			options = append(options, "rshared")
 		case runtime.MountPropagation_PROPAGATION_HOST_TO_CONTAINER:
