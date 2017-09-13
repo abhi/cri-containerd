@@ -501,7 +501,7 @@ func addOCIBindMounts(g *generate.Generator, mounts []*runtime.Mount, mountLabel
 		if err != nil {
 			return fmt.Errorf("failed to resolve symlink %q: %v", src, err)
 		}
-		options := []string{"rbind","rshared"}
+		options := []string{"rbind", "rshared"}
 		switch mount.GetPropagation() {
 		case runtime.MountPropagation_PROPAGATION_PRIVATE:
 			//options = append(options, "rprivate")
@@ -512,6 +512,11 @@ func addOCIBindMounts(g *generate.Generator, mounts []*runtime.Mount, mountLabel
 		default:
 			glog.Warningf("Unknown propagation mode for hostPath %q", mount.HostPath)
 			options = append(options, "rprivate")
+		}
+		for _, o := range options {
+			if o == "shared" || o == "rshared" {
+				g.SetLinuxRootPropagation(o)
+			}
 		}
 
 		if mount.GetReadonly() {
