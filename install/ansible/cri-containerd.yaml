@@ -44,3 +44,10 @@
     
     - name: "Start Kubelet"
       systemd: name=kubelet daemon_reload=yes state=started enabled=yes
+
+    - name: "Pre-pull pause container image"
+      shell: |
+             /usr/local/bin/ctr pull gcr.io/google_containers/pause:3.0
+             /usr/local/bin/crictl --runtime-endpoint /var/run/cri-containerd.sock \
+             --image-endpoint /var/run/cri-containerd.sock pull \
+             gcr.io/google_containers/pause:3.0
